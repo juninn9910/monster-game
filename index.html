@@ -47,7 +47,7 @@
 
     <div id="controls">
         <div style="font-size: 1.1rem; font-weight: bold; margin-bottom: 10px; text-align: center;">필살기 발동 (소리 켜짐)</div>
-        <button id="btn-hand" onclick="setMode('HAND')">🙌 양손 번쩍</button>
+        <button id="btn-hand" onclick="setMode('HAND')">✋ 손 들기</button>
         <button id="btn-color" class="inactive" onclick="setMode('COLOR')">🔴 빨간색 감지</button>
     </div>
 
@@ -57,24 +57,22 @@
         let poses = [];
         let prevFrame;
         
-        let gameState = 'PLAYING'; // PLAYING, CLEARED
+        let gameState = 'PLAYING'; 
         let triggerMode = 'HAND'; 
         
-        // 스테이지 및 몬스터 설정
         let level = 1;
         const monsters = ['👾', '👻', '🦖', '👽', '🐉', '🐙'];
         
         let monsterHp = 100;
         let maxHp = 100;
         let monsterX, monsterY;
-        let isMonsterHit = false; // 피격 효과용
+        let isMonsterHit = false; 
         let hitTimer = 0;
         
-        // 발사체(공격) 및 파티클 배열
         let projectiles = [];
         let particles = [];
-        let lastShotTime = 0; // 너무 연사되지 않도록 조절
-        let lastBigShotTime = 0; // 필살기 쿨타임
+        let lastShotTime = 0; 
+        let lastBigShotTime = 0; 
 
         // 사운드 엔진
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -86,17 +84,14 @@
             osc.connect(gain); gain.connect(audioCtx.destination);
             
             if (type === 'shoot') {
-                // 작은 공격 발사음 (슉!)
                 osc.type = 'sine'; osc.frequency.setValueAtTime(600, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
                 gain.gain.setValueAtTime(0.05, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
                 osc.start(); osc.stop(audioCtx.currentTime + 0.1);
             } else if (type === 'big_shoot') {
-                // 필살기 발사음 (피융~~!)
                 osc.type = 'square'; osc.frequency.setValueAtTime(800, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.4);
                 gain.gain.setValueAtTime(0.1, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.4);
                 osc.start(); osc.stop(audioCtx.currentTime + 0.4);
             } else if (type === 'hit') {
-                // 타격음 (퍽!)
                 osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.1);
                 gain.gain.setValueAtTime(0.1, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
                 osc.start(); osc.stop(audioCtx.currentTime + 0.1);
@@ -112,7 +107,6 @@
             osc.start(audioCtx.currentTime + delay); osc.stop(audioCtx.currentTime + delay + 0.3);
         }
 
-        // 폭죽 파티클
         class Particle {
             constructor(x, y) {
                 this.x = x; this.y = y;
@@ -125,12 +119,8 @@
         }
 
         function setup() {
-            // 전자칠판 화면에 꽉 차게 캔버스 생성
             createCanvas(windowWidth, windowHeight);
-            
-            // 몬스터 위치: 오른쪽(80% 지점), 높이는 중간
-            monsterX = width * 0.8;
-            monsterY = height / 2;
+            monsterX = width * 0.8; monsterY = height / 2;
             
             video = createCapture(VIDEO, () => {
                 prevFrame = createImage(video.width, video.height);
@@ -141,44 +131,37 @@
             video.hide(); 
         }
 
-        // 창 크기가 변하면 캔버스도 맞춰서 변경
         function windowResized() {
             resizeCanvas(windowWidth, windowHeight);
-            monsterX = width * 0.8;
-            monsterY = height / 2;
+            monsterX = width * 0.8; monsterY = height / 2;
         }
 
         function draw() {
-            // 배경: 카메라 화면 반전 송출 (화면 꽉 채우기)
             push();
             translate(width, 0); scale(-1, 1);
             image(video, 0, 0, width, height);
             pop();
             
-            // 전체를 약간 어둡게 눌러서 게임 이펙트가 잘 보이게 함
-            fill(0, 0, 0, 100);
-            rect(0, 0, width, height);
+            fill(0, 0, 0, 100); rect(0, 0, width, height);
 
             if (gameState === 'PLAYING') {
-                detectMotion(); // 기본 공격
-                if (triggerMode === 'HAND') detectHandsUp(); // 필살기
-                else if (triggerMode === 'COLOR') detectColor(); // 필살기
+                detectMotion(); 
+                if (triggerMode === 'HAND') detectHandsUp(); 
+                else if (triggerMode === 'COLOR') detectColor(); 
                 
                 updateAndDrawProjectiles();
                 drawMonster();
                 drawHpBar();
             } else if (gameState === 'CLEARED') {
-                drawMonster(); // 쓰러진 모습
+                drawMonster(); 
                 updateAndDrawParticles();
             }
         }
 
-        // 1. 움직임 감지 ➡️ 기본 공격 발사!
         function detectMotion() {
             if (!video.loadedmetadata || !prevFrame) return;
 
-            video.loadPixels();
-            prevFrame.loadPixels();
+            video.loadPixels(); prevFrame.loadPixels();
             
             let sensitivity = parseFloat(document.getElementById('setting-sensitivity').value);
             let motionCount = 0;
@@ -189,34 +172,29 @@
                 }
             }
 
-            // 움직임이 감지되면 && 마지막으로 쏜 지 0.2초(200ms)가 지났으면 쏜다!
             if (motionCount > 200 && millis() - lastShotTime > 200) {
-                // 발사체 생성 (왼쪽 학생 위치에서 생성되어 오른쪽으로 날아감)
-                projectiles.push({ 
-                    x: width * 0.2, 
-                    y: random(height * 0.3, height * 0.7), // 높이는 무작위
-                    speed: 25, 
-                    type: '✨', 
-                    damage: 5 // 기본 공격 데미지
-                });
+                projectiles.push({ x: width * 0.2, y: random(height * 0.3, height * 0.7), speed: 25, type: '✨', damage: 5 });
                 playSound('shoot');
                 lastShotTime = millis();
                 
-                // 화면 테두리 번쩍임 효과
                 push(); noFill(); stroke(255, 255, 255, 100); strokeWeight(20); rect(0, 0, width, height); pop();
             }
             
             prevFrame.copy(video, 0, 0, video.width, video.height, 0, 0, video.width, video.height);
         }
 
-        // 2. 포즈/색상 감지 ➡️ 필살기 발사!
+        // ⭐ 변경된 부분: 한 손만 인식해도 발동되도록 수정!
         function detectHandsUp() {
             if (poses.length > 0) {
                 let pose = poses[0].pose;
-                if (pose.leftWrist.confidence > 0.5 && pose.rightWrist.confidence > 0.5) {
-                    if (pose.leftWrist.y < pose.nose.y && pose.rightWrist.y < pose.nose.y) {
-                        fireUltimate();
-                    }
+                
+                // 코(nose)의 위치를 기준으로, 왼손이나 오른손 중 하나라도 코보다 위에 있으면 발동
+                // confidence(신뢰도)를 0.5에서 0.3으로 낮춰서 인식률을 높임
+                let leftHandUp = (pose.leftWrist.confidence > 0.3 && pose.leftWrist.y < pose.nose.y);
+                let rightHandUp = (pose.rightWrist.confidence > 0.3 && pose.rightWrist.y < pose.nose.y);
+
+                if (leftHandUp || rightHandUp) {
+                    fireUltimate();
                 }
             }
         }
@@ -231,147 +209,75 @@
         }
 
         function fireUltimate() {
-            // 필살기는 쿨타임 2초 (너무 자주 안 나가게)
             if (millis() - lastBigShotTime > 2000) {
-                projectiles.push({ 
-                    x: width * 0.2, 
-                    y: height / 2, 
-                    speed: 35, 
-                    type: '🔥', // 큰 불덩이
-                    damage: 30 // 필살기 데미지
-                });
+                projectiles.push({ x: width * 0.2, y: height / 2, speed: 35, type: '🔥', damage: 30 });
                 playSound('big_shoot');
                 lastBigShotTime = millis();
             }
         }
 
-        // 공격 이동 및 타격 판정
         function updateAndDrawProjectiles() {
             for (let i = projectiles.length - 1; i >= 0; i--) {
                 let p = projectiles[i];
-                p.x += p.speed; // 오른쪽으로 이동
+                p.x += p.speed; 
                 
-                // 그리기
-                push();
-                textAlign(CENTER, CENTER);
-                textSize(p.type === '🔥' ? 150 : 60); // 불덩이는 크고, 별은 작게
-                text(p.type, p.x, p.y);
-                pop();
+                push(); textAlign(CENTER, CENTER); textSize(p.type === '🔥' ? 150 : 60); text(p.type, p.x, p.y); pop();
 
-                // 몬스터에게 닿았는가? (x 좌표 비교)
                 if (p.x >= monsterX - 100) {
                     monsterHp -= p.damage;
                     playSound('hit');
-                    isMonsterHit = true;
-                    hitTimer = millis(); // 피격 이펙트 타이머 시작
-                    projectiles.splice(i, 1); // 닿으면 총알 삭제
+                    isMonsterHit = true; hitTimer = millis(); 
+                    projectiles.splice(i, 1); 
                     
-                    // 체력이 0 이하가 되면 클리어
-                    if (monsterHp <= 0) {
-                        monsterHp = 0;
-                        levelClear();
-                    }
+                    if (monsterHp <= 0) { monsterHp = 0; levelClear(); }
                 }
             }
         }
 
-        // 몬스터 그리기
         function drawMonster() {
             push(); textAlign(CENTER, CENTER);
+            let shakeX = 0; let displayIcon = monsters[(level - 1) % monsters.length];
             
-            // 피격 시 떨림 효과 & 💥 아이콘으로 변경
-            let shakeX = 0;
-            let displayIcon = monsters[(level - 1) % monsters.length];
-            
-            if (isMonsterHit && millis() - hitTimer < 200) {
-                shakeX = random(-20, 20);
-                displayIcon = '💥';
-            } else {
-                isMonsterHit = false;
-            }
+            if (isMonsterHit && millis() - hitTimer < 200) { shakeX = random(-20, 20); displayIcon = '💥'; } 
+            else { isMonsterHit = false; }
 
-            // 쓰러졌을 땐 빙글빙글 돌면서 떨어지게 (옵션)
-            if (gameState === 'CLEARED') {
-                displayIcon = '😵';
-                monsterY += 5; // 밑으로 스르륵 떨어짐
-            }
+            if (gameState === 'CLEARED') { displayIcon = '😵'; monsterY += 5; }
 
-            textSize(200); 
-            text(displayIcon, monsterX + shakeX, monsterY);
+            textSize(200); text(displayIcon, monsterX + shakeX, monsterY);
             pop();
         }
 
-        // 몬스터 HP 바 그리기 (오른쪽 상단)
         function drawHpBar() {
-            push();
-            let barWidth = 300;
-            let barHeight = 40;
-            let xPos = width - barWidth - 50; // 우측 여백 50
-            let yPos = 50;
+            push(); let barWidth = 300; let barHeight = 40; let xPos = width - barWidth - 50; let yPos = 50;
+            fill(0, 0, 0, 150); stroke(255); strokeWeight(4); rect(xPos, yPos, barWidth, barHeight, 20);
 
-            // 배경(검정)
-            fill(0, 0, 0, 150);
-            stroke(255);
-            strokeWeight(4);
-            rect(xPos, yPos, barWidth, barHeight, 20);
-
-            // 체력 비율 계산
             let hpRatio = max(0, monsterHp / maxHp);
-            
-            // 체력바(빨강 -> 초록)
             noStroke();
-            if (hpRatio > 0.5) fill(0, 255, 0);
-            else if (hpRatio > 0.2) fill(255, 200, 0);
-            else fill(255, 0, 0);
+            if (hpRatio > 0.5) fill(0, 255, 0); else if (hpRatio > 0.2) fill(255, 200, 0); else fill(255, 0, 0);
             
             rect(xPos + 5, yPos + 5, (barWidth - 10) * hpRatio, barHeight - 10, 15);
-            
-            // 글씨
-            fill(255);
-            textSize(24);
-            textAlign(CENTER, CENTER);
-            text("몬스터 HP", xPos + barWidth / 2, yPos + barHeight / 2);
+            fill(255); textSize(24); textAlign(CENTER, CENTER); text("몬스터 HP", xPos + barWidth / 2, yPos + barHeight / 2);
             pop();
         }
 
         function levelClear() {
-            gameState = 'CLEARED';
-            playSound('success');
-            
-            // 폭죽 생성
-            particles = [];
-            for(let i=0; i<150; i++) particles.push(new Particle(monsterX, monsterY));
-
+            gameState = 'CLEARED'; playSound('success');
+            particles = []; for(let i=0; i<150; i++) particles.push(new Particle(monsterX, monsterY));
             let msgBox = document.getElementById('message-box');
-            msgBox.style.display = 'block';
-            msgBox.innerHTML = `STAGE ${level} 클리어!<br>다음 몬스터가 나타납니다!`;
-            
-            setTimeout(nextLevel, 4000); // 4초 뒤 다음 라운드
+            msgBox.style.display = 'block'; msgBox.innerHTML = `STAGE ${level} 클리어!<br>다음 몬스터가 나타납니다!`;
+            setTimeout(nextLevel, 4000); 
         }
 
         function updateAndDrawParticles() {
-            for (let i = particles.length - 1; i >= 0; i--) {
-                particles[i].update();
-                particles[i].show();
-                if (particles[i].alpha <= 0) particles.splice(i, 1);
-            }
+            for (let i = particles.length - 1; i >= 0; i--) { particles[i].update(); particles[i].show(); if (particles[i].alpha <= 0) particles.splice(i, 1); }
         }
 
         function nextLevel() {
-            level++;
-            maxHp += 50; // 다음 탄은 체력 증가
-            monsterHp = maxHp;
-            monsterX = width * 0.8;
-            monsterY = height / 2;
-            projectiles = [];
-            
-            document.getElementById('level-text').innerText = 'STAGE ' + level;
-            document.getElementById('message-box').style.display = 'none';
-            
+            level++; maxHp += 50; monsterHp = maxHp; monsterX = width * 0.8; monsterY = height / 2; projectiles = [];
+            document.getElementById('level-text').innerText = 'STAGE ' + level; document.getElementById('message-box').style.display = 'none';
             gameState = 'PLAYING';
         }
 
-        // 모드 및 설정창 토글 함수들
         function setMode(mode) {
             triggerMode = mode;
             if(audioCtx.state === 'suspended') audioCtx.resume(); 
