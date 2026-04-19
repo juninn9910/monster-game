@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>신체 활동 게임: 몬스터 물리치기!</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.js"></script>
+    <script src="https://unpkg.com/ml5@0.12.2/dist/ml5.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #222; font-family: 'Malgun Gothic', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        
+        /* UI 및 게이지 */
+        #ui-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
+        .gauge-container { position: absolute; top: 20px; width: 60%; height: 50px; background-color: rgba(255, 255, 255, 0.3); border-radius: 25px; border: 5px solid #fff; overflow: hidden; }
+        .gauge-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #ffea00, #ffaa00); transition: width 0.2s ease-out; }
+        .gauge-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 2rem; font-weight: bold; color: white; text-shadow: 2px 2px 4px #000; }
+        
+        /* 레벨 및 메시지 */
+        #level-text { position: absolute; top: 80px; font-size: 2.5rem; font-weight: bold; color: #00e5ff; text-shadow: 2px 2px 4px #000; }
+        #message-box { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 4rem; font-weight: bold; color: #ff3366; text-shadow: 4px 4px 0px #fff, -2px -2px 0px #fff; text-align: center; display: none; width: 100%; line-height: 1.2; }
+        
+        /* 컨트롤 패널 (모드 선택) */
+        #controls { position: absolute; bottom: 20px; right: 20px; pointer-events: auto; background: rgba(255,255,255,0.8); padding: 15px; border-radius: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
+        button { font-size: 1.2rem; padding: 10px 15px; margin: 5px; cursor: pointer; border: none; border-radius: 10px; background-color: #4CAF50; color: white; font-weight: bold; }
+        button.inactive { background-color: #aaa; }
+        
+        /* 난이도 설정 패널 (선생님용) */
+        #settings-btn { position: absolute; top: 20px; right: 20px; font-size: 2.5rem; cursor: pointer; z-index: 100; transition: transform 0.2s; }
+        #settings-btn:hover { transform: scale(1.1); }
+        #settings-panel { position: absolute; top: 80px; right: 20px; background: rgba(255,255,255,0.95); padding: 20px; border-radius: 15px; z-index: 100; box-shadow: 0 4px 15px rgba(0,0,0,0.4); display: none; min-width: 250px; font-size: 1.2rem; }
+        #settings-panel label { display: block; margin: 15px 0; font-weight: bold; }
+        #settings-panel input[type=range] { width: 100%; margin-top: 5px; }
+        #close-settings { width: 100%; background-color: #ff3366; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-container">
+        <div class="gauge-container">
+            <div class="gauge-bar" id="gauge-bar"></div>
+            <div class="gauge-text" id="gauge-text">에너지 충전: 0%</div>
+        </div>
+        <div id="level-text">LEVEL 1</div>
+        <div id="message-box">필살기 준비 완료!</div>
+    </div>
+
+    <div id="settings-btn" onclick="toggleSettings()">⚙️</div>
+    <div id="settings-panel">
+        <h3 style="margin-top:0; text-align:center;">선생님 설정 (난이도)</h3>
+        <label>충전 속도 (빠름 ↔ 느림)<br>
+            <input type="range" id="setting-speed" min="0.5" max="4" step="0.5" value="1.5">
+        </label>
+        <label>움직임 민감도 (예민 ↔ 둔감)<br>
+            <input type="range" id="setting-sensitivity" min="20" max="100" step="10" value="50">
+        </label>
+        <button id="close-settings" onclick="toggleSettings()">닫기</button>
+    </div>
+
+    <div id="controls">
+        <div style="font-size: 1.1rem; font-weight: bold; margin-bottom: 10px; text-align: center;">필살기 모드 (클릭시 소리 켜짐)</div>
+        <button id="btn-hand" onclick="setMode('HAND')">🙌 손 들기</button>
+        <button id="btn-color" class="inactive" onclick="setMode('COLOR')">🔴 빨간색 찾기</button>
+    </div>
+
+    <script>
+        let video;
+        let poseNet;
+        let poses = [];
+        let prevFrame;
+        
+        let gameState = 'LOADING'; // LOADING, CHARGING, READY, ATTACK, SUCCESS
+        let triggerMode = 'HAND'; 
+        
+        // 스테이지 및 몬스터 배열
+        let level = 1;
+        const monsters = ['👾', '👻', '🦖', '👽', '🐉', '🐙'];
+        
+        let mana = 0;
+        let lastManaSound = 0;
+        let monsterX, monsterY;
+        let fireballY;
+        
+        // 파티클 (폭죽) 배열
+        let particles = [];
+
+        // 사운드 엔진
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playSound(type) {
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            
+            if (type === 'charge') {
+                osc.type = 'sine'; osc.frequency.setValueAtTime(300 + (mana * 5), audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+            } else if (type === 'ready') {
+                osc.type = 'triangle'; osc.frequency.setValueAtTime(600, audioCtx.currentTime); osc.frequency.linearRampToValueAtTime(1200, audioCtx.currentTime + 0.3);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+            } else if (type === 'attack') {
+                osc.type = 'square'; osc.frequency.setValueAtTime(800, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.4);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.4);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.4);
+            } else if (type === 'success') {
+                playNote(523.25, 0.0); playNote(659.25, 0.15); playNote(783.99, 0.3); playNote(1046.50, 0.45);
+            }
+        }
+
+        function playNote(freq, delay) {
+            const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+            osc.type = 'square'; osc.frequency.value = freq;
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            gain.gain.setValueAtTime(0, audioCtx.currentTime + delay);
+            gain.gain.linearRampToValueAtTime(0.1, audioCtx.currentTime + delay + 0.05);
+            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + delay + 0.3);
+            osc.start(audioCtx.currentTime + delay); osc.stop(audioCtx.currentTime + delay + 0.3);
+        }
+
+        // 파티클 클래스 (폭죽 효과)
+        class Particle {
+            constructor() {
+                this.x = width / 2;
+                this.y = height / 2;
+                this.vx = random(-15, 15);
+                this.vy = random(-20, -5); // 위로 솟구침
+                this.color = [random(100,255), random(100,255), random(100,255)];
+                this.alpha = 255;
+                this.size = random(10, 25);
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += 0.8; // 중력
+                this.alpha -= 3;
+            }
+            show() {
+                push();
+                noStroke();
+                fill(this.color[0], this.color[1], this.color[2], this.alpha);
+                rect(this.x, this.y, this.size, this.size);
+                pop();
+            }
+        }
+
+        function setup() {
+            createCanvas(800, 600);
+            monsterX = width / 2;
+            monsterY = height / 2 - 20;
+            
+            video = createCapture(VIDEO, () => {
+                prevFrame = createImage(video.width, video.height);
+                poseNet = ml5.poseNet(video, modelReady);
+                poseNet.on('pose', function(results) { poses = results; });
+            });
+            video.size(640, 480);
+            video.hide(); 
+        }
+
+        function modelReady() {
+            gameState = 'CHARGING';
+        }
+
+        function draw() {
+            push();
+            translate(width, 0); scale(-1, 1);
+            image(video, 0, 0, width, height);
+            pop();
+
+            if (gameState === 'LOADING') {
+                fill(255); textSize(40); textAlign(CENTER, CENTER);
+                text("AI 로딩 중...", width/2, height/2);
+                return;
+            }
+
+            if (gameState === 'CHARGING') { detectMotion(); drawMonster(false); }
+            if (gameState === 'READY') { drawMonster(false); if (triggerMode === 'HAND') detectHandsUp(); else if (triggerMode === 'COLOR') detectColor(); }
+            if (gameState === 'ATTACK') { drawMonster(false); drawFireball(); }
+            if (gameState === 'SUCCESS') { 
+                drawMonster(true); 
+                // 폭죽 파티클 그리기
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    particles[i].update();
+                    particles[i].show();
+                    if (particles[i].alpha <= 0) particles.splice(i, 1);
+                }
+            }
+        }
+
+        function detectMotion() {
+            video.loadPixels();
+            if (prevFrame && prevFrame.pixels.length > 0) {
+                prevFrame.loadPixels();
+                let motionCount = 0;
+                
+                // 설정 패널의 값 가져오기
+                let sensitivity = parseFloat(document.getElementById('setting-sensitivity').value);
+                let speed = parseFloat(document.getElementById('setting-speed').value);
+                
+                for (let i = 0; i < video.pixels.length; i += 16) {
+                    if (abs(video.pixels[i] - prevFrame.pixels[i]) > sensitivity) motionCount++;
+                }
+                
+                if (motionCount > 500) {
+                    mana += speed; 
+                    
+                    if (Math.floor(mana) % 10 === 0 && Math.floor(mana) !== lastManaSound) {
+                        playSound('charge'); lastManaSound = Math.floor(mana);
+                    }
+
+                    push(); noFill(); stroke(255, 234, 0, 150); strokeWeight(20); rect(0, 0, width, height); pop();
+                }
+                
+                updateManaUI();
+
+                if (mana >= 100) {
+                    mana = 100;
+                    gameState = 'READY';
+                    playSound('ready'); 
+                    document.getElementById('message-box').style.display = 'block';
+                    document.getElementById('message-box').innerText = '필살기 준비 완료!\n' + (triggerMode === 'HAND' ? '양손을 번쩍 드세요!' : '빨간색을 보여주세요!');
+                }
+            }
+            prevFrame.copy(video, 0, 0, video.width, video.height, 0, 0, prevFrame.width, prevFrame.height);
+        }
+
+        function detectHandsUp() {
+            if (poses.length > 0) {
+                let pose = poses[0].pose;
+                if (pose.leftWrist.confidence > 0.5 && pose.rightWrist.confidence > 0.5) {
+                    if (pose.leftWrist.y < pose.nose.y && pose.rightWrist.y < pose.nose.y) startAttack();
+                }
+            }
+        }
+
+        function detectColor() {
+            video.loadPixels();
+            let redCount = 0;
+            for (let i = 0; i < video.pixels.length; i += 16) {
+                let r = video.pixels[i], g = video.pixels[i + 1], b = video.pixels[i + 2];
+                if (r > 180 && g < 80 && b < 80) redCount++;
+            }
+            if (redCount > 1000) startAttack();
+        }
+
+        function drawMonster(isHit) {
+            push(); textAlign(CENTER, CENTER);
+            let shakeX = isHit ? random(-15, 15) : 0;
+            textSize(180); 
+            // 현재 레벨에 맞는 몬스터 출력
+            let currentMonster = monsters[(level - 1) % monsters.length];
+            text(isHit ? '💥' : currentMonster, monsterX + shakeX, monsterY);
+            pop();
+        }
+
+        function startAttack() {
+            document.getElementById('message-box').style.display = 'none';
+            gameState = 'ATTACK';
+            fireballY = height;
+            playSound('attack'); 
+        }
+
+        function drawFireball() {
+            push(); textAlign(CENTER, CENTER); textSize(120); text('🔥', monsterX, fireballY); pop();
+            fireballY -= 20; 
+            
+            if (fireballY <= monsterY) {
+                gameState = 'SUCCESS';
+                playSound('success'); 
+                
+                // 성공 시 파티클 100개 생성
+                particles = [];
+                for(let i=0; i<100; i++) particles.push(new Particle());
+
+                document.getElementById('message-box').style.display = 'block';
+                document.getElementById('message-box').innerText = '처치 성공! 🎉\n다음 레벨로 이동합니다.';
+                
+                setTimeout(nextLevel, 3500);
+            }
+        }
+
+        function updateManaUI() {
+            document.getElementById('gauge-bar').style.width = mana + '%';
+            document.getElementById('gauge-text').innerText = '에너지 충전: ' + Math.floor(mana) + '%';
+        }
+
+        function nextLevel() {
+            level++;
+            document.getElementById('level-text').innerText = 'LEVEL ' + level;
+            mana = 0;
+            lastManaSound = 0;
+            updateManaUI();
+            document.getElementById('message-box').style.display = 'none';
+            gameState = 'CHARGING';
+        }
+
+        function setMode(mode) {
+            triggerMode = mode;
+            if(audioCtx.state === 'suspended') audioCtx.resume(); 
+            document.getElementById('btn-hand').className = mode === 'HAND' ? '' : 'inactive';
+            document.getElementById('btn-color').className = mode === 'COLOR' ? '' : 'inactive';
+        }
+
+        function toggleSettings() {
+            let panel = document.getElementById('settings-panel');
+            panel.style.display = panel.style.display === 'none' || panel.style.display === '' ? 'block' : 'none';
+        }
+    </script>
+</body>
+</html>
