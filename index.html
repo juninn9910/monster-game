@@ -9,29 +9,41 @@
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background-color: #000; font-family: 'Malgun Gothic', sans-serif; }
         
-        /* UI 텍스트 오버레이 */
+        #start-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); color: #00e5ff; display: flex; justify-content: center; align-items: center; z-index: 1000; cursor: pointer; text-align: center; font-size: 3rem; font-weight: bold; flex-direction: column; }
+        #start-overlay p { font-size: 1.5rem; color: #fff; margin-top: 20px; font-weight: normal; }
+
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
         
-        #level-text { position: absolute; top: 30px; left: 50%; transform: translateX(-50%); font-size: 3rem; font-weight: bold; color: #00e5ff; text-shadow: 3px 3px 6px #000; }
+        .gauge-container { position: absolute; top: 30px; left: 50%; transform: translateX(-50%); width: 60%; height: 60px; background-color: rgba(255, 255, 255, 0.3); border-radius: 30px; border: 5px solid #fff; overflow: hidden; display: none; }
+        .gauge-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #ffea00, #ff5500); transition: width 0.2s ease-out; }
+        .gauge-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 2.5rem; font-weight: bold; color: white; text-shadow: 2px 2px 4px #000; }
         
-        #message-box { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 5rem; font-weight: bold; color: #ffeb3b; text-shadow: 4px 4px 0px #000; text-align: center; display: none; width: 100%; z-index: 10;}
+        #level-text { position: absolute; top: 100px; left: 50%; transform: translateX(-50%); font-size: 2rem; font-weight: bold; color: #00e5ff; text-shadow: 3px 3px 6px #000; display: none; }
+        #message-box { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 4rem; font-weight: bold; color: #ffeb3b; text-shadow: 4px 4px 0px #000; text-align: center; display: none; width: 100%; z-index: 10; line-height: 1.3;}
         
-        /* 컨트롤 패널 (모드 선택) */
         #controls { position: absolute; bottom: 20px; left: 20px; pointer-events: auto; background: rgba(255,255,255,0.8); padding: 15px; border-radius: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
         button { font-size: 1.2rem; padding: 10px 15px; margin: 5px; cursor: pointer; border: none; border-radius: 10px; background-color: #4CAF50; color: white; font-weight: bold; }
         button.inactive { background-color: #aaa; }
         
-        /* 난이도 설정 패널 (선생님용) */
         #settings-btn { position: absolute; top: 20px; right: 20px; font-size: 3rem; cursor: pointer; z-index: 100; transition: transform 0.2s; pointer-events: auto; background: rgba(255,255,255,0.5); border-radius: 50%; width: 60px; height: 60px; display: flex; justify-content: center; align-items: center;}
-        #settings-panel { position: absolute; top: 90px; right: 20px; background: rgba(255,255,255,0.95); padding: 20px; border-radius: 15px; z-index: 100; box-shadow: 0 4px 15px rgba(0,0,0,0.4); display: none; min-width: 250px; font-size: 1.2rem; pointer-events: auto; }
+        #settings-panel { position: absolute; top: 90px; right: 20px; background: rgba(255,255,255,0.95); padding: 20px; border-radius: 15px; z-index: 100; box-shadow: 0 4px 15px rgba(0,0,0,0.4); display: none; min-width: 300px; font-size: 1.2rem; pointer-events: auto; }
         #settings-panel label { display: block; margin: 15px 0; font-weight: bold; }
         #settings-panel input[type=range] { width: 100%; margin-top: 5px; }
-        #close-settings { width: 100%; background-color: #ff3366; margin-top: 10px; }
+        #close-settings { width: 100%; background-color: #ff3366; color: white; font-size: 1.2rem; padding: 10px; border: none; border-radius: 10px; cursor: pointer; margin-top: 10px; font-weight: bold; }
     </style>
 </head>
 <body>
 
+    <div id="start-overlay" onclick="initGame()">
+        👆 화면을 터치해서 시작!
+        <p>카메라 권한을 허용해 주세요.</p>
+    </div>
+
     <div id="ui-layer">
+        <div class="gauge-container" id="gauge-container">
+            <div class="gauge-bar" id="gauge-bar"></div>
+            <div class="gauge-text" id="gauge-text">에너지 충전: 0%</div>
+        </div>
         <div id="level-text">STAGE 1</div>
         <div id="message-box"></div>
     </div>
@@ -39,64 +51,59 @@
     <div id="settings-btn" onclick="toggleSettings()">⚙️</div>
     <div id="settings-panel">
         <h3 style="margin-top:0; text-align:center;">선생님 설정 (난이도)</h3>
-        <label>움직임 민감도 (예민 ↔ 둔감)<br>
-            <input type="range" id="setting-sensitivity" min="20" max="100" step="10" value="40">
-        </label>
+        <label>충전 속도 (게이지 찰 때)<br><input type="range" id="setting-speed" min="0.1" max="2" step="0.1" value="0.3"></label>
+        <label>움직임 민감도 (예민 ↔ 둔감)<br><input type="range" id="setting-sensitivity" min="30" max="150" step="10" value="80"></label>
         <button id="close-settings" onclick="toggleSettings()">닫기</button>
     </div>
 
     <div id="controls">
-        <div style="font-size: 1.1rem; font-weight: bold; margin-bottom: 10px; text-align: center;">필살기 발동 (소리 켜짐)</div>
-        <button id="btn-hand" onclick="setMode('HAND')">✋ 손 들기</button>
-        <button id="btn-color" class="inactive" onclick="setMode('COLOR')">🔴 빨간색 감지</button>
+        <div style="font-size: 1.1rem; font-weight: bold; margin-bottom: 10px; text-align: center;">필살기 발동 모드 (소리 켜짐)</div>
+        <button id="btn-hand" onclick="setMode('INSTANT')">⚡ 즉시 발동 (손 들기)</button>
+        <button id="btn-hold" class="inactive" onclick="setMode('HOLD')">⏳ 버티기 미션 (손 들고 유지)</button>
     </div>
 
     <script>
-        let video;
-        let poseNet;
-        let poses = [];
-        let prevFrame;
-        
-        let gameState = 'PLAYING'; 
-        let triggerMode = 'HAND'; 
+        let video; let poseNet; let poses = []; let prevFrame;
+        let gameState = 'WAITING_FOR_CLICK'; 
+        let triggerMode = 'INSTANT'; // INSTANT(즉시) 또는 HOLD(유지)
         
         let level = 1;
         const monsters = ['👾', '👻', '🦖', '👽', '🐉', '🐙'];
         
-        let monsterHp = 100;
-        let maxHp = 100;
-        let monsterX, monsterY;
-        let isMonsterHit = false; 
-        let hitTimer = 0;
-        
-        let projectiles = [];
-        let particles = [];
-        let lastShotTime = 0; 
-        let lastBigShotTime = 0; 
+        let mana = 0; let lastManaSound = 0;
+        let monsterX, monsterY; let fireballY;
+        let startProgress = 0; 
 
-        // 사운드 엔진
+        // 버티기 미션 변수
+        let holdTimer = 0; // 현재 버틴 시간(ms)
+        let targetHoldTime = 1500; // 목표 시간(ms) (레벨별 증가)
+
+        let particles = [];
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         
         function playSound(type) {
             if(audioCtx.state === 'suspended') audioCtx.resume();
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
+            const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
             osc.connect(gain); gain.connect(audioCtx.destination);
-            
-            if (type === 'shoot') {
-                osc.type = 'sine'; osc.frequency.setValueAtTime(600, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
+            if (type === 'charge') {
+                osc.type = 'sine'; osc.frequency.setValueAtTime(300 + (mana * 5), audioCtx.currentTime);
                 gain.gain.setValueAtTime(0.05, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
                 osc.start(); osc.stop(audioCtx.currentTime + 0.1);
-            } else if (type === 'big_shoot') {
-                osc.type = 'square'; osc.frequency.setValueAtTime(800, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.4);
+            } else if (type === 'ready') {
+                osc.type = 'triangle'; osc.frequency.setValueAtTime(600, audioCtx.currentTime); osc.frequency.linearRampToValueAtTime(1200, audioCtx.currentTime + 0.3);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+            } else if (type === 'attack') {
+                osc.type = 'square'; osc.frequency.setValueAtTime(800, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.4);
                 gain.gain.setValueAtTime(0.1, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.4);
                 osc.start(); osc.stop(audioCtx.currentTime + 0.4);
-            } else if (type === 'hit') {
-                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.1);
-                gain.gain.setValueAtTime(0.1, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
-                osc.start(); osc.stop(audioCtx.currentTime + 0.1);
             } else if (type === 'success') {
                 playNote(523.25, 0.0); playNote(659.25, 0.15); playNote(783.99, 0.3); playNote(1046.50, 0.45);
+            } else if (type === 'tick') {
+                // 버티기 중 틱 소리
+                osc.type = 'sine'; osc.frequency.setValueAtTime(1000, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.05, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.05);
             }
         }
 
@@ -109,8 +116,7 @@
 
         class Particle {
             constructor(x, y) {
-                this.x = x; this.y = y;
-                this.vx = random(-15, 15); this.vy = random(-20, -5);
+                this.x = x; this.y = y; this.vx = random(-15, 15); this.vy = random(-20, -5);
                 this.color = [random(100,255), random(100,255), random(100,255)];
                 this.alpha = 255; this.size = random(10, 25);
             }
@@ -118,52 +124,92 @@
             show() { push(); noStroke(); fill(this.color[0], this.color[1], this.color[2], this.alpha); rect(this.x, this.y, this.size, this.size); pop(); }
         }
 
+        function initGame() {
+            document.getElementById('start-overlay').style.display = 'none';
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            if (poseNet && poseNet.architecture) gameState = 'START_SCREEN';
+            else gameState = 'LOADING';
+        }
+
         function setup() {
             createCanvas(windowWidth, windowHeight);
-            monsterX = width * 0.8; monsterY = height / 2;
-            
+            monsterX = width / 2; monsterY = height / 2;
             video = createCapture(VIDEO, () => {
                 prevFrame = createImage(video.width, video.height);
-                poseNet = ml5.poseNet(video, () => console.log('AI 로드됨'));
+                poseNet = ml5.poseNet(video, () => { if (gameState === 'LOADING') gameState = 'START_SCREEN'; });
                 poseNet.on('pose', (results) => poses = results);
             });
-            video.size(640, 480);
-            video.hide(); 
+            video.size(640, 480); video.hide(); 
         }
 
-        function windowResized() {
-            resizeCanvas(windowWidth, windowHeight);
-            monsterX = width * 0.8; monsterY = height / 2;
-        }
+        function windowResized() { resizeCanvas(windowWidth, windowHeight); monsterX = width / 2; monsterY = height / 2; }
 
         function draw() {
-            push();
-            translate(width, 0); scale(-1, 1);
-            image(video, 0, 0, width, height);
+            push(); translate(width, 0); scale(-1, 1);
+            if (video.loadedmetadata) image(video, 0, 0, width, height);
             pop();
-            
-            fill(0, 0, 0, 100); rect(0, 0, width, height);
+            fill(0, 0, 0, 120); rect(0, 0, width, height); // 화면 약간 어둡게
 
-            if (gameState === 'PLAYING') {
-                detectMotion(); 
-                if (triggerMode === 'HAND') detectHandsUp(); 
-                else if (triggerMode === 'COLOR') detectColor(); 
-                
-                updateAndDrawProjectiles();
-                drawMonster();
-                drawHpBar();
+            if (gameState === 'LOADING') {
+                fill(255); textSize(50); textAlign(CENTER, CENTER); text("인공지능 로딩 중...", width/2, height/2);
+            } else if (gameState === 'START_SCREEN') {
+                drawStartScreen();
+            } else if (gameState === 'CHARGING') {
+                detectMotion(); drawMonster(false);
+            } else if (gameState === 'READY') {
+                drawMonster(false);
+                if (triggerMode === 'INSTANT') detectInstantAttack();
+                else if (triggerMode === 'HOLD') detectHoldAttack();
+            } else if (gameState === 'ATTACK') {
+                drawMonster(false); drawFireball();
             } else if (gameState === 'CLEARED') {
-                drawMonster(); 
-                updateAndDrawParticles();
+                drawMonster(true); updateAndDrawParticles();
             }
+        }
+
+        function getPhysicalPose(pose) {
+            return {
+                leftWrist: { x: width - map(pose.leftWrist.x, 0, video.width, 0, width), y: map(pose.leftWrist.y, 0, video.height, 0, height), confidence: pose.leftWrist.confidence },
+                rightWrist: { x: width - map(pose.rightWrist.x, 0, video.width, 0, width), y: map(pose.rightWrist.y, 0, video.height, 0, height), confidence: pose.rightWrist.confidence },
+                nose: { x: width - map(pose.nose.x, 0, video.width, 0, width), y: map(pose.nose.y, 0, video.height, 0, height), confidence: pose.nose.confidence }
+            };
+        }
+
+        function drawStartScreen() {
+            let btnX = width / 2; let btnY = height / 2; let radius = 120;
+            push();
+            fill(0, 200, 255, 80); stroke(0, 255, 255); strokeWeight(5); ellipse(btnX, btnY, radius * 2);
+            fill(255); noStroke(); textSize(35); textAlign(CENTER, CENTER);
+            text("✋\n여기에 손을 올려\n시작하세요", btnX, btnY);
+
+            let isHovering = false;
+            if (poses.length > 0) {
+                let pose = getPhysicalPose(poses[0].pose);
+                if ((pose.leftWrist.confidence > 0.3 && dist(pose.leftWrist.x, pose.leftWrist.y, btnX, btnY) < radius) ||
+                    (pose.rightWrist.confidence > 0.3 && dist(pose.rightWrist.x, pose.rightWrist.y, btnX, btnY) < radius)) { isHovering = true; }
+                
+                if (pose.leftWrist.confidence > 0.3) { fill(255, 255, 0, 180); ellipse(pose.leftWrist.x, pose.leftWrist.y, 40); }
+                if (pose.rightWrist.confidence > 0.3) { fill(255, 255, 0, 180); ellipse(pose.rightWrist.x, pose.rightWrist.y, 40); }
+            }
+
+            if (isHovering) {
+                startProgress += 2.5; 
+                noFill(); stroke(0, 255, 0); strokeWeight(15); arc(btnX, btnY, radius * 2 + 30, radius * 2 + 30, -HALF_PI, -HALF_PI + (startProgress/100) * TWO_PI);
+                if (startProgress >= 100) {
+                    startProgress = 0;
+                    document.getElementById('gauge-container').style.display = 'block';
+                    document.getElementById('level-text').style.display = 'block';
+                    playSound('ready'); gameState = 'CHARGING';
+                }
+            } else { startProgress = max(0, startProgress - 5); }
+            pop();
         }
 
         function detectMotion() {
             if (!video.loadedmetadata || !prevFrame) return;
-
             video.loadPixels(); prevFrame.loadPixels();
-            
             let sensitivity = parseFloat(document.getElementById('setting-sensitivity').value);
+            let fillSpeed = parseFloat(document.getElementById('setting-speed').value);
             let motionCount = 0;
             
             if (video.pixels.length > 0 && prevFrame.pixels.length > 0) {
@@ -172,117 +218,135 @@
                 }
             }
 
-            if (motionCount > 200 && millis() - lastShotTime > 200) {
-                projectiles.push({ x: width * 0.2, y: random(height * 0.3, height * 0.7), speed: 25, type: '✨', damage: 5 });
-                playSound('shoot');
-                lastShotTime = millis();
-                
-                push(); noFill(); stroke(255, 255, 255, 100); strokeWeight(20); rect(0, 0, width, height); pop();
+            if (motionCount > 200) {
+                mana += fillSpeed; 
+                if (Math.floor(mana) % 10 === 0 && Math.floor(mana) !== lastManaSound) { playSound('charge'); lastManaSound = Math.floor(mana); }
+                push(); noFill(); stroke(255, 234, 0, 80); strokeWeight(20); rect(0, 0, width, height); pop();
             }
             
+            updateManaUI();
+
+            if (mana >= 100) {
+                mana = 100; gameState = 'READY'; playSound('ready'); holdTimer = 0; // 버티기 타이머 초기화
+                
+                let msg = document.getElementById('message-box');
+                msg.style.display = 'block';
+                if(triggerMode === 'INSTANT') {
+                    msg.innerHTML = '에너지 100% 충전!<br>✋ 한 손을 번쩍 드세요!';
+                } else {
+                    msg.innerHTML = `[특수 미션]<br>✋ 손을 들고 <span style="color:#00ffcc">${targetHoldTime/1000}초</span>간 버티세요!`;
+                }
+            }
             prevFrame.copy(video, 0, 0, video.width, video.height, 0, 0, video.width, video.height);
         }
 
-        // ⭐ 변경된 부분: 한 손만 인식해도 발동되도록 수정!
-        function detectHandsUp() {
+        // 1. 기존 모드 (즉시 발동)
+        function detectInstantAttack() {
             if (poses.length > 0) {
                 let pose = poses[0].pose;
-                
-                // 코(nose)의 위치를 기준으로, 왼손이나 오른손 중 하나라도 코보다 위에 있으면 발동
-                // confidence(신뢰도)를 0.5에서 0.3으로 낮춰서 인식률을 높임
-                let leftHandUp = (pose.leftWrist.confidence > 0.3 && pose.leftWrist.y < pose.nose.y);
-                let rightHandUp = (pose.rightWrist.confidence > 0.3 && pose.rightWrist.y < pose.nose.y);
-
-                if (leftHandUp || rightHandUp) {
-                    fireUltimate();
+                if ((pose.leftWrist.confidence > 0.3 && pose.leftWrist.y < pose.nose.y) || 
+                    (pose.rightWrist.confidence > 0.3 && pose.rightWrist.y < pose.nose.y)) {
+                    executeAttack();
                 }
             }
         }
 
-        function detectColor() {
-            video.loadPixels();
-            let redCount = 0;
-            for (let i = 0; i < video.pixels.length; i += 16) {
-                if (video.pixels[i] > 180 && video.pixels[i+1] < 80 && video.pixels[i+2] < 80) redCount++;
-            }
-            if (redCount > 1000) fireUltimate();
-        }
+        // 2. 신규 모드 (특수 미션: n초 유지)
+        function detectHoldAttack() {
+            let isHoldingPose = false;
 
-        function fireUltimate() {
-            if (millis() - lastBigShotTime > 2000) {
-                projectiles.push({ x: width * 0.2, y: height / 2, speed: 35, type: '🔥', damage: 30 });
-                playSound('big_shoot');
-                lastBigShotTime = millis();
-            }
-        }
-
-        function updateAndDrawProjectiles() {
-            for (let i = projectiles.length - 1; i >= 0; i--) {
-                let p = projectiles[i];
-                p.x += p.speed; 
-                
-                push(); textAlign(CENTER, CENTER); textSize(p.type === '🔥' ? 150 : 60); text(p.type, p.x, p.y); pop();
-
-                if (p.x >= monsterX - 100) {
-                    monsterHp -= p.damage;
-                    playSound('hit');
-                    isMonsterHit = true; hitTimer = millis(); 
-                    projectiles.splice(i, 1); 
-                    
-                    if (monsterHp <= 0) { monsterHp = 0; levelClear(); }
+            if (poses.length > 0) {
+                let pose = poses[0].pose;
+                // 한 손이라도 코 위로 올라갔는지 확인
+                if ((pose.leftWrist.confidence > 0.3 && pose.leftWrist.y < pose.nose.y) || 
+                    (pose.rightWrist.confidence > 0.3 && pose.rightWrist.y < pose.nose.y)) {
+                    isHoldingPose = true;
                 }
             }
+
+            // 시각적 피드백 그리기 (화면 중앙 프로그레스 링)
+            push();
+            let ringX = width / 2;
+            let ringY = height / 2 + 150; // 몬스터 살짝 아래
+            
+            fill(0, 0, 0, 150); noStroke();
+            ellipse(ringX, ringY, 150);
+            fill(255); textSize(30); textAlign(CENTER, CENTER);
+            text(`${(targetHoldTime/1000).toFixed(1)}초 버티기`, ringX, ringY);
+
+            if (isHoldingPose) {
+                holdTimer += deltaTime; // 프레임 간의 시간 차이 더하기
+                if (Math.floor(holdTimer) % 300 < 50) playSound('tick'); // 틱틱 소리
+            } else {
+                // 손을 내리면 타이머가 빠르게 깎임 (리셋 효과)
+                holdTimer = max(0, holdTimer - (deltaTime * 2)); 
+            }
+
+            // 차오르는 링 그리기
+            let progress = constrain(holdTimer / targetHoldTime, 0, 1);
+            noFill(); stroke(0, 255, 200); strokeWeight(20);
+            arc(ringX, ringY, 180, 180, -HALF_PI, -HALF_PI + (progress * TWO_PI));
+            pop();
+
+            // 목표 시간 도달 시 발동!
+            if (holdTimer >= targetHoldTime) {
+                executeAttack();
+            }
         }
 
-        function drawMonster() {
+        function executeAttack() {
+            document.getElementById('message-box').style.display = 'none';
+            gameState = 'ATTACK';
+            fireballY = height;
+            playSound('attack');
+        }
+
+        function drawMonster(isHit) {
             push(); textAlign(CENTER, CENTER);
-            let shakeX = 0; let displayIcon = monsters[(level - 1) % monsters.length];
-            
-            if (isMonsterHit && millis() - hitTimer < 200) { shakeX = random(-20, 20); displayIcon = '💥'; } 
-            else { isMonsterHit = false; }
-
-            if (gameState === 'CLEARED') { displayIcon = '😵'; monsterY += 5; }
-
-            textSize(200); text(displayIcon, monsterX + shakeX, monsterY);
+            let shakeX = isHit ? random(-20, 20) : 0;
+            let displayIcon = monsters[(level - 1) % monsters.length];
+            if (isHit && gameState === 'CLEARED') { displayIcon = '😵'; }
+            textSize(250); text(displayIcon, monsterX + shakeX, monsterY);
             pop();
         }
 
-        function drawHpBar() {
-            push(); let barWidth = 300; let barHeight = 40; let xPos = width - barWidth - 50; let yPos = 50;
-            fill(0, 0, 0, 150); stroke(255); strokeWeight(4); rect(xPos, yPos, barWidth, barHeight, 20);
-
-            let hpRatio = max(0, monsterHp / maxHp);
-            noStroke();
-            if (hpRatio > 0.5) fill(0, 255, 0); else if (hpRatio > 0.2) fill(255, 200, 0); else fill(255, 0, 0);
-            
-            rect(xPos + 5, yPos + 5, (barWidth - 10) * hpRatio, barHeight - 10, 15);
-            fill(255); textSize(24); textAlign(CENTER, CENTER); text("몬스터 HP", xPos + barWidth / 2, yPos + barHeight / 2);
-            pop();
-        }
-
-        function levelClear() {
-            gameState = 'CLEARED'; playSound('success');
-            particles = []; for(let i=0; i<150; i++) particles.push(new Particle(monsterX, monsterY));
-            let msgBox = document.getElementById('message-box');
-            msgBox.style.display = 'block'; msgBox.innerHTML = `STAGE ${level} 클리어!<br>다음 몬스터가 나타납니다!`;
-            setTimeout(nextLevel, 4000); 
+        function drawFireball() {
+            push(); textAlign(CENTER, CENTER); textSize(180); text('🔥', monsterX, fireballY); pop();
+            fireballY -= 25; 
+            if (fireballY <= monsterY) {
+                gameState = 'CLEARED'; playSound('success'); 
+                particles = []; for(let i=0; i<150; i++) particles.push(new Particle(monsterX, monsterY));
+                document.getElementById('message-box').style.display = 'block';
+                document.getElementById('message-box').innerHTML = `STAGE ${level} 처치 성공! 🎉<br>다음 레벨로 이동합니다.`;
+                setTimeout(nextLevel, 3500);
+            }
         }
 
         function updateAndDrawParticles() {
             for (let i = particles.length - 1; i >= 0; i--) { particles[i].update(); particles[i].show(); if (particles[i].alpha <= 0) particles.splice(i, 1); }
         }
 
+        function updateManaUI() {
+            document.getElementById('gauge-bar').style.width = mana + '%';
+            document.getElementById('gauge-text').innerText = '에너지 충전: ' + Math.floor(mana) + '%';
+        }
+
         function nextLevel() {
-            level++; maxHp += 50; monsterHp = maxHp; monsterX = width * 0.8; monsterY = height / 2; projectiles = [];
-            document.getElementById('level-text').innerText = 'STAGE ' + level; document.getElementById('message-box').style.display = 'none';
-            gameState = 'PLAYING';
+            level++;
+            // ★ 스테이지가 올라갈수록 버텨야 하는 시간이 0.5초씩 증가 (최대 5초)
+            targetHoldTime = min(1500 + ((level - 1) * 500), 5000); 
+
+            mana = 0; lastManaSound = 0; updateManaUI();
+            document.getElementById('level-text').innerText = 'STAGE ' + level;
+            document.getElementById('message-box').style.display = 'none';
+            gameState = 'START_SCREEN';
         }
 
         function setMode(mode) {
             triggerMode = mode;
             if(audioCtx.state === 'suspended') audioCtx.resume(); 
-            document.getElementById('btn-hand').className = mode === 'HAND' ? '' : 'inactive';
-            document.getElementById('btn-color').className = mode === 'COLOR' ? '' : 'inactive';
+            document.getElementById('btn-hand').className = mode === 'INSTANT' ? '' : 'inactive';
+            document.getElementById('btn-hold').className = mode === 'HOLD' ? '' : 'inactive';
         }
 
         function toggleSettings() {
