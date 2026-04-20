@@ -3,26 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>신체 활동 게임: 몬스터 물리치기!</title>
+    <title>신체 활동 게임: 나쁜 세균 물리치기!</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.js"></script>
     <script src="https://unpkg.com/ml5@0.12.2/dist/ml5.min.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background-color: #000; font-family: 'Malgun Gothic', sans-serif; }
         
+        /* 터치 유도 오버레이 */
         #start-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); color: #00e5ff; display: flex; justify-content: center; align-items: center; z-index: 1000; cursor: pointer; text-align: center; font-size: 3rem; font-weight: bold; flex-direction: column; }
         #start-overlay p { font-size: 1.5rem; color: #fff; margin-top: 20px; font-weight: normal; }
 
+        /* UI 레이어 */
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
         
         #level-text { position: absolute; top: 30px; left: 50%; transform: translateX(-50%); font-size: 3rem; font-weight: bold; color: #00e5ff; text-shadow: 3px 3px 6px #000; display: none; }
         #message-box { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 4rem; font-weight: bold; color: #ffeb3b; text-shadow: 4px 4px 0px #000; text-align: center; display: none; width: 100%; z-index: 10; line-height: 1.4;}
         
+        /* 하단 컨트롤 패널 */
         #controls { position: absolute; bottom: 20px; left: 20px; pointer-events: auto; background: rgba(255,255,255,0.85); padding: 15px; border-radius: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.3); display: flex; flex-direction: column; }
         .btn-row { display: flex; justify-content: center; }
         button { font-size: 1.1rem; padding: 10px 15px; margin: 5px; cursor: pointer; border: none; border-radius: 10px; background-color: #4CAF50; color: white; font-weight: bold; transition: 0.2s; }
         button.inactive { background-color: #999; }
         button:hover { transform: scale(1.05); }
         
+        /* 설정 패널 */
         #settings-btn { position: absolute; top: 20px; right: 20px; font-size: 3rem; cursor: pointer; z-index: 100; transition: transform 0.2s; pointer-events: auto; background: rgba(255,255,255,0.5); border-radius: 50%; width: 60px; height: 60px; display: flex; justify-content: center; align-items: center;}
         #settings-panel { position: absolute; top: 90px; right: 20px; background: rgba(255,255,255,0.95); padding: 20px; border-radius: 15px; z-index: 100; box-shadow: 0 4px 15px rgba(0,0,0,0.4); display: none; min-width: 300px; font-size: 1.2rem; pointer-events: auto; }
         #settings-panel label { display: block; margin: 15px 0; font-weight: bold; }
@@ -52,62 +56,61 @@
     </div>
 
     <div id="controls">
-        <div style="font-size: 1.1rem; font-weight: bold; margin-bottom: 10px; text-align: center; color: #333;">필살기 미션 난이도</div>
+        <div style="font-size: 1.1rem; font-weight: bold; margin-bottom: 10px; text-align: center; color: #333;">백신 투여(필살기) 미션 난이도</div>
         <div class="btn-row">
             <button id="btn-instant" class="inactive" onclick="setMode('INSTANT')">⭐ 초급<br><small>(즉시)</small></button>
             <button id="btn-hold" onclick="setMode('HOLD')">⭐⭐ 중급<br><small>(손 들고 버티기)</small></button>
-            <button id="btn-combo" class="inactive" onclick="setMode('COMBO')">⭐⭐⭐ 고급<br><small>(손+다리 들고 버티기)</small></button>
+            <button id="btn-combo" class="inactive" onclick="setMode('COMBO')">⭐⭐⭐ 고급<br><small>(손+다리 버티기)</small></button>
         </div>
     </div>
 
     <script>
+        // --- 1. 전역 변수 선언 ---
         let video; let poseNet; let poses = []; let prevFrame;
         let gameState = 'WAITING_FOR_CLICK'; 
         let triggerMode = 'HOLD'; 
         
         let level = 1;
-        const monsters = ['👾', '👻', '🦖', '👽', '🐉', '🐙'];
+        const germs = ['🦠', '🐛', '🦟', '🤢', '🤒', '🧫'];
         
-        // 몬스터 체력 시스템
-        let monsterHp = 100;
-        let maxHp = 100;
-        let monsterX, monsterY; 
-        let isMonsterHit = false;
-        let hitTimer = 0;
+        let germHp = 100; let maxHp = 100;
+        let germX, germY; 
+        let isGermHit = false; let hitTimer = 0;
+        
+        let screenShake = 0; 
+        let damageTexts = []; 
+        let feverGauge = 0; 
+        let isFeverTime = false; 
+        let feverTimer = 0; 
 
-        // 공격 발사체 관리
         let projectiles = [];
-        let lastShotTime = 0; 
-        let lastBigShotTime = 0;
-
-        let startProgress = 0; 
-        let holdTimer = 0; 
-        let targetHoldTime = 1500; 
-
         let particles = [];
+        let lastShotTime = 0; let lastBigShotTime = 0;
+        let startProgress = 0; let holdTimer = 0; let targetHoldTime = 1500; 
+
+        // --- 2. 오디오 시스템 설정 ---
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         
         function playSound(type) {
             if(audioCtx.state === 'suspended') audioCtx.resume();
             const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
             osc.connect(gain); gain.connect(audioCtx.destination);
-            if (type === 'shoot') { // 일반 공격 (작은 소리)
-                osc.type = 'sine'; osc.frequency.setValueAtTime(600, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
+            
+            if (type === 'shoot') { 
+                osc.type = 'sine'; osc.frequency.setValueAtTime(isFeverTime ? 900 : 600, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
                 gain.gain.setValueAtTime(0.05, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
                 osc.start(); osc.stop(audioCtx.currentTime + 0.1);
-            } else if (type === 'big_shoot') { // 필살기 발사 (큰 소리)
-                osc.type = 'square'; osc.frequency.setValueAtTime(800, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.4);
-                gain.gain.setValueAtTime(0.1, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.4);
-                osc.start(); osc.stop(audioCtx.currentTime + 0.4);
-            } else if (type === 'hit') { // 몬스터 피격음
+            } else if (type === 'big_shoot') { 
+                osc.type = 'square'; osc.frequency.setValueAtTime(800, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.5);
+                gain.gain.setValueAtTime(0.15, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+            } else if (type === 'hit') { 
                 osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, audioCtx.currentTime); osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.1);
                 gain.gain.setValueAtTime(0.1, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
                 osc.start(); osc.stop(audioCtx.currentTime + 0.1);
-            } else if (type === 'tick') { // 버티기 틱틱 소리
-                osc.type = 'sine'; osc.frequency.setValueAtTime(1000, audioCtx.currentTime);
-                gain.gain.setValueAtTime(0.05, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
-                osc.start(); osc.stop(audioCtx.currentTime + 0.05);
-            } else if (type === 'success') { // 클리어
+            } else if (type === 'fever') {
+                playNote(523.25, 0.0); playNote(783.99, 0.1); playNote(1046.50, 0.2); 
+            } else if (type === 'success') { 
                 playNote(523.25, 0.0); playNote(659.25, 0.15); playNote(783.99, 0.3); playNote(1046.50, 0.45);
             }
         }
@@ -119,16 +122,36 @@
             osc.start(audioCtx.currentTime + delay); osc.stop(audioCtx.currentTime + delay + 0.3);
         }
 
+        // --- 3. 이펙트 클래스 ---
+        class DamageText {
+            constructor(x, y, dmg, isCrit) {
+                this.x = x + random(-30, 30); this.y = y + random(-30, 30);
+                this.dmg = dmg; this.isCrit = isCrit;
+                this.alpha = 255; this.vy = -3; 
+            }
+            update() { this.y += this.vy; this.alpha -= 5; }
+            show() {
+                push();
+                textAlign(CENTER, CENTER);
+                textSize(this.isCrit ? 60 : 35);
+                fill(this.isCrit ? color(255, 50, 50, this.alpha) : color(255, 255, 255, this.alpha));
+                stroke(0, 0, 0, this.alpha); strokeWeight(5);
+                text(`-${this.dmg}`, this.x, this.y);
+                pop();
+            }
+        }
+
         class Particle {
             constructor(x, y) {
                 this.x = x; this.y = y; this.vx = random(-15, 15); this.vy = random(-20, -5);
-                this.color = [random(100,255), random(100,255), random(100,255)];
+                this.color = [random(100,255), random(200,255), random(200,255)]; 
                 this.alpha = 255; this.size = random(10, 25);
             }
             update() { this.x += this.vx; this.y += this.vy; this.vy += 0.8; this.alpha -= 5; }
-            show() { push(); noStroke(); fill(this.color[0], this.color[1], this.color[2], this.alpha); rect(this.x, this.y, this.size, this.size); pop(); }
+            show() { push(); noStroke(); fill(this.color[0], this.color[1], this.color[2], this.alpha); ellipse(this.x, this.y, this.size); pop(); }
         }
 
+        // --- 4. 메인 게임 로직 ---
         function initGame() {
             document.getElementById('start-overlay').style.display = 'none';
             if(audioCtx.state === 'suspended') audioCtx.resume();
@@ -138,7 +161,9 @@
 
         function setup() {
             createCanvas(windowWidth, windowHeight);
-            monsterX = width * 0.8; monsterY = height / 2; // 몬스터는 우측 고정
+            germX = width * 0.8; germY = height / 2; 
+            
+            // 비디오 캡처 안전하게 초기화
             video = createCapture(VIDEO, () => {
                 prevFrame = createImage(video.width, video.height);
                 poseNet = ml5.poseNet(video, () => { if (gameState === 'LOADING') gameState = 'START_SCREEN'; });
@@ -147,14 +172,37 @@
             video.size(640, 480); video.hide(); 
         }
 
-        function windowResized() { resizeCanvas(windowWidth, windowHeight); monsterX = width * 0.8; monsterY = height / 2; }
+        function windowResized() { 
+            resizeCanvas(windowWidth, windowHeight); 
+            germX = width * 0.8; germY = height / 2; 
+        }
 
         function draw() {
+            push(); 
+            // 📳 화면 진동 부드럽게 감쇠
+            if (screenShake > 0) {
+                translate(random(-screenShake, screenShake), random(-screenShake, screenShake));
+                screenShake *= 0.85; 
+                if (screenShake < 1) screenShake = 0;
+            }
+
+            // 카메라 영상 반전 처리
             push(); translate(width, 0); scale(-1, 1);
             if (video.loadedmetadata) image(video, 0, 0, width, height);
             pop();
-            fill(0, 0, 0, 120); rect(0, 0, width, height); 
+            
+            // 피버 타임 시각 효과 (부드러운 물결)
+            if (isFeverTime) {
+                fill(0, 150, 255, 60 + sin(millis()/150)*30); 
+                feverTimer -= deltaTime;
+                if(feverTimer <= 0) { isFeverTime = false; feverGauge = 0; }
+            } else {
+                fill(0, 0, 0, 120); 
+                feverGauge = max(0, feverGauge - 0.1); 
+            }
+            rect(0, 0, width, height); 
 
+            // 뼈대 그리기 (안정화)
             drawSkeleton();
 
             if (gameState === 'LOADING') {
@@ -162,27 +210,33 @@
             } else if (gameState === 'START_SCREEN') {
                 drawStartScreen();
             } else if (gameState === 'PLAYING') {
-                // 게임 중에는 일반 공격과 필살기 탐지가 동시에 일어남
                 detectMotionAttack(); 
                 if (triggerMode === 'INSTANT') detectInstantAttack();
                 else detectHoldAttack(); 
                 
                 updateAndDrawProjectiles();
-                drawMonster();
+                drawGerm();
                 drawHpBar();
+                drawFeverBar(); 
+                updateAndDrawEffects(); 
             } else if (gameState === 'CLEARED') {
-                drawMonster(); 
+                drawGerm(); 
                 updateAndDrawParticles();
+                updateAndDrawEffects(); // 남은 텍스트 마저 그리기
+                updateAndDrawProjectiles(); // 남은 총알 날리기 (데미지는 안 들어감)
             }
+
+            pop(); // Screen Shake translate 종료
         }
 
+        // 뼈대 렌더링 최적화
         function drawSkeleton() {
             if (poses.length > 0 && (gameState === 'PLAYING' || gameState === 'START_SCREEN')) {
                 let pose = poses[0].pose;
                 fill(0, 255, 150, 180); noStroke();
                 let joints = ['nose', 'leftWrist', 'rightWrist', 'leftKnee', 'rightKnee', 'leftAnkle', 'rightAnkle'];
                 for(let j of joints) {
-                    if(pose[j].confidence > 0.2) {
+                    if(pose[j] && pose[j].confidence > 0.2) {
                         let px = width - map(pose[j].x, 0, video.width, 0, width);
                         let py = map(pose[j].y, 0, video.height, 0, height);
                         ellipse(px, py, 25);
@@ -191,6 +245,7 @@
             }
         }
 
+        // 물리 좌표 매핑 헬퍼
         function getPhysicalPose(pose) {
             return {
                 leftWrist: { x: width - map(pose.leftWrist.x, 0, video.width, 0, width), y: map(pose.leftWrist.y, 0, video.height, 0, height), confidence: pose.leftWrist.confidence },
@@ -198,12 +253,12 @@
             };
         }
 
+        // 시작 버튼 로직
         function drawStartScreen() {
             let btnX = width / 2; let btnY = height / 2; let radius = 120;
-            push();
-            fill(0, 200, 255, 80); stroke(0, 255, 255); strokeWeight(5); ellipse(btnX, btnY, radius * 2);
+            push(); fill(0, 200, 255, 80); stroke(0, 255, 255); strokeWeight(5); ellipse(btnX, btnY, radius * 2);
             fill(255); noStroke(); textSize(35); textAlign(CENTER, CENTER);
-            text("✋\n여기에 손을 올려\n전투 시작", btnX, btnY);
+            text("✋\n여기에 손을 올려\n세균 소독 시작", btnX, btnY);
 
             let isHovering = false;
             if (poses.length > 0) {
@@ -216,15 +271,14 @@
                 startProgress += 2.5; 
                 noFill(); stroke(0, 255, 0); strokeWeight(15); arc(btnX, btnY, radius * 2 + 30, radius * 2 + 30, -HALF_PI, -HALF_PI + (startProgress/100) * TWO_PI);
                 if (startProgress >= 100) {
-                    startProgress = 0;
-                    document.getElementById('level-text').style.display = 'block';
+                    startProgress = 0; document.getElementById('level-text').style.display = 'block';
                     playSound('shoot'); gameState = 'PLAYING';
                 }
             } else { startProgress = max(0, startProgress - 5); }
             pop();
         }
 
-        // --- 1. 움직임 감지 ➡️ 일반 공격 발사 (데미지: 2) ---
+        // 모션 인식 (최적화)
         function detectMotionAttack() {
             if (!video.loadedmetadata || !prevFrame) return;
             video.loadPixels(); prevFrame.loadPixels();
@@ -237,37 +291,47 @@
                 }
             }
 
-            // 움직임 감지 & 쿨타임(0.25초)이 지났으면 짤짤이 공격 생성
-            if (motionCount > 150 && millis() - lastShotTime > 250) {
-                projectiles.push({ x: width * 0.2, y: random(height * 0.3, height * 0.7), speed: 25, type: '✨', damage: 2 });
-                playSound('shoot');
-                lastShotTime = millis();
-                // 시각 피드백 (화면 테두리 번쩍)
-                push(); noFill(); stroke(255, 255, 255, 50); strokeWeight(15); rect(0, 0, width, height); pop();
+            if (motionCount > 150) {
+                if(!isFeverTime) feverGauge += 2; 
+
+                if(feverGauge >= 100 && !isFeverTime) {
+                    isFeverTime = true;
+                    feverTimer = 5000; 
+                    playSound('fever');
+                }
+
+                let shotDelay = isFeverTime ? 100 : 250;
+                
+                if (millis() - lastShotTime > shotDelay) {
+                    if(isFeverTime) {
+                        projectiles.push({ x: width * 0.2, y: random(height * 0.4, height * 0.6), speed: 30, type: '🫧', damage: 3, isUltimate: false });
+                        projectiles.push({ x: width * 0.2, y: random(height * 0.4, height * 0.6) - 50, speed: 30, type: '🫧', damage: 3, isUltimate: false });
+                        projectiles.push({ x: width * 0.2, y: random(height * 0.4, height * 0.6) + 50, speed: 30, type: '🫧', damage: 3, isUltimate: false });
+                    } else {
+                        projectiles.push({ x: width * 0.2, y: random(height * 0.3, height * 0.7), speed: 25, type: '🫧', damage: 2, isUltimate: false });
+                    }
+                    playSound('shoot'); lastShotTime = millis();
+                    push(); noFill(); stroke(255, 255, 255, 50); strokeWeight(15); rect(0, 0, width, height); pop();
+                }
             }
             prevFrame.copy(video, 0, 0, video.width, video.height, 0, 0, video.width, video.height);
         }
 
-        // --- 2. 초급 모드: 즉시 필살기 ---
+        // 즉시 공격
         function detectInstantAttack() {
             if (poses.length > 0) {
                 let pose = poses[0].pose;
                 if ((pose.leftWrist.confidence > 0.3 && pose.leftWrist.y < pose.nose.y) || 
-                    (pose.rightWrist.confidence > 0.3 && pose.rightWrist.y < pose.nose.y)) {
-                    fireUltimate();
-                }
+                    (pose.rightWrist.confidence > 0.3 && pose.rightWrist.y < pose.nose.y)) { fireUltimate(); }
             }
         }
 
-        // --- 3. 중급/고급 모드: 버티기 필살기 ---
+        // 버티기 공격
         function detectHoldAttack() {
             let isHoldingPose = false;
-
             if (poses.length > 0) {
                 let pose = poses[0].pose;
-                let handUp = (pose.leftWrist.confidence > 0.3 && pose.leftWrist.y < pose.nose.y) || 
-                             (pose.rightWrist.confidence > 0.3 && pose.rightWrist.y < pose.nose.y);
-                
+                let handUp = (pose.leftWrist.confidence > 0.3 && pose.leftWrist.y < pose.nose.y) || (pose.rightWrist.confidence > 0.3 && pose.rightWrist.y < pose.nose.y);
                 let legLifted = false;
                 if (pose.leftKnee.confidence > 0.2 && pose.rightKnee.confidence > 0.2 && abs(pose.leftKnee.y - pose.rightKnee.y) > 40) legLifted = true;
                 if (pose.leftAnkle.confidence > 0.2 && pose.rightAnkle.confidence > 0.2 && abs(pose.leftAnkle.y - pose.rightAnkle.y) > 40) legLifted = true;
@@ -276,108 +340,104 @@
                 else if (triggerMode === 'COMBO') isHoldingPose = handUp && legLifted;
             }
 
-            push();
-            let ringX = width * 0.2; // 왼쪽 학생 위치에 링 표시
-            let ringY = height / 2; 
-            
+            push(); let ringX = width * 0.2; let ringY = height / 2; 
             fill(0, 0, 0, 150); noStroke(); ellipse(ringX, ringY, 150);
             fill(255); textSize(24); textAlign(CENTER, CENTER);
-            text(`${(targetHoldTime/1000).toFixed(1)}초\n버티기!`, ringX, ringY);
+            text(`${(targetHoldTime/1000).toFixed(1)}초\n자세 유지!`, ringX, ringY);
 
             if (isHoldingPose) {
                 holdTimer += deltaTime; 
-                if (Math.floor(holdTimer) % 300 < 50) playSound('tick'); 
-            } else {
-                holdTimer = max(0, holdTimer - (deltaTime * 2)); 
-            }
+                if (Math.floor(holdTimer) % 300 < 50 && holdTimer < targetHoldTime) playSound('tick'); 
+            } else { holdTimer = max(0, holdTimer - (deltaTime * 2)); }
 
             let progress = constrain(holdTimer / targetHoldTime, 0, 1);
-            noFill(); stroke(0, 255, 200); strokeWeight(15);
-            arc(ringX, ringY, 180, 180, -HALF_PI, -HALF_PI + (progress * TWO_PI));
+            noFill(); stroke(0, 255, 200); strokeWeight(15); arc(ringX, ringY, 180, 180, -HALF_PI, -HALF_PI + (progress * TWO_PI));
             pop();
 
-            if (holdTimer >= targetHoldTime) {
-                fireUltimate();
-                holdTimer = 0; // 발사 후 타이머 초기화
-            }
+            if (holdTimer >= targetHoldTime) { fireUltimate(); holdTimer = 0; }
         }
 
-        // --- 필살기 생성 (데미지: 40) ---
         function fireUltimate() {
-            // 쿨타임 2초
             if (millis() - lastBigShotTime > 2000) {
-                projectiles.push({ x: width * 0.2, y: height / 2, speed: 30, type: '🔥', damage: 40 });
-                playSound('big_shoot');
-                lastBigShotTime = millis();
+                projectiles.push({ x: width * 0.2, y: height / 2, speed: 40, type: '💊', damage: 40, isUltimate: true });
+                playSound('big_shoot'); lastBigShotTime = millis();
             }
         }
 
-        // --- 발사체 이동 및 타격 판정 ---
+        // 투사체 처리 로직 (메모리 누수 완벽 차단)
         function updateAndDrawProjectiles() {
             for (let i = projectiles.length - 1; i >= 0; i--) {
                 let p = projectiles[i];
                 p.x += p.speed; 
-                
-                push(); textAlign(CENTER, CENTER); 
-                textSize(p.type === '🔥' ? 150 : 60); // 필살기는 큼직하게
-                text(p.type, p.x, p.y); 
-                pop();
+                push(); textAlign(CENTER, CENTER); textSize(p.isUltimate ? 150 : 80); text(p.type, p.x, p.y); pop();
 
-                // 몬스터에게 닿으면 (데미지 계산)
-                if (p.x >= monsterX - 80) {
-                    monsterHp -= p.damage;
+                // 적중 판정 (PLAYING 상태일 때만 데미지 적용)
+                if (p.x >= germX - 80 && gameState === 'PLAYING') {
+                    germHp -= p.damage;
                     playSound('hit');
-                    isMonsterHit = true; hitTimer = millis(); 
+                    isGermHit = true; hitTimer = millis(); 
+                    damageTexts.push(new DamageText(germX, germY - 100, p.damage, p.isUltimate));
+                    
+                    screenShake = p.isUltimate ? 30 : 5;
                     projectiles.splice(i, 1); 
                     
-                    if (monsterHp <= 0) { 
-                        monsterHp = 0; 
-                        levelClear(); 
-                    }
+                    if (germHp <= 0) { germHp = 0; levelClear(); }
+                } 
+                // 💡 화면 밖으로 완전히 벗어난 투사체는 즉시 삭제 (메모리 누수 방지)
+                else if (p.x > width + 100) {
+                    projectiles.splice(i, 1);
                 }
             }
         }
 
-        function drawMonster() {
+        function drawGerm() {
             push(); textAlign(CENTER, CENTER);
-            let shakeX = 0;
-            let displayIcon = monsters[(level - 1) % monsters.length];
-            
-            // 피격 효과 (💥)
-            if (isMonsterHit && millis() - hitTimer < 200) { shakeX = random(-20, 20); displayIcon = '💥'; } 
-            else { isMonsterHit = false; }
-
-            if (gameState === 'CLEARED') { displayIcon = '😵'; monsterY += 8; } // 쓰러짐
-
-            textSize(250); text(displayIcon, monsterX + shakeX, monsterY);
+            let shakeX = 0; let displayIcon = germs[(level - 1) % germs.length];
+            if (isGermHit && millis() - hitTimer < 200) { shakeX = random(-30, 30); displayIcon = '💥'; } 
+            else { isGermHit = false; }
+            if (gameState === 'CLEARED') { displayIcon = '🧼'; germY += 8; } 
+            textSize(250); text(displayIcon, germX + shakeX, germY);
             pop();
         }
 
-        // --- 몬스터 HP 게이지 (우측 상단) ---
+        function updateAndDrawEffects() {
+            for (let i = damageTexts.length - 1; i >= 0; i--) {
+                damageTexts[i].update(); damageTexts[i].show();
+                if (damageTexts[i].alpha <= 0) damageTexts.splice(i, 1);
+            }
+        }
+
         function drawHpBar() {
             push(); let barWidth = 350; let barHeight = 45; let xPos = width - barWidth - 50; let yPos = 30;
-            
-            // HP 배경
             fill(0, 0, 0, 150); stroke(255); strokeWeight(4); rect(xPos, yPos, barWidth, barHeight, 20);
-
-            // HP 바 채우기
-            let hpRatio = max(0, monsterHp / maxHp);
+            let hpRatio = max(0, germHp / maxHp);
             noStroke();
-            if (hpRatio > 0.5) fill(0, 255, 0); else if (hpRatio > 0.2) fill(255, 200, 0); else fill(255, 0, 0);
+            if (hpRatio > 0.5) fill(255, 50, 50); else if (hpRatio > 0.2) fill(255, 200, 0); else fill(0, 255, 100);
             rect(xPos + 5, yPos + 5, (barWidth - 10) * hpRatio, barHeight - 10, 15);
+            fill(255); textSize(24); textAlign(CENTER, CENTER); text(`나쁜 세균 체력: ${Math.floor(germHp)}`, xPos + barWidth / 2, yPos + barHeight / 2);
+            pop();
+        }
+
+        function drawFeverBar() {
+            push();
+            let barWidth = width * 0.5; let barHeight = 20; let xPos = width/2 - barWidth/2; let yPos = height - 40;
+            fill(0,0,0,150); noStroke(); rect(xPos, yPos, barWidth, barHeight, 10);
+            if(isFeverTime) fill(0, 255, 255); 
+            else fill(0, 200, 255);
             
-            // HP 텍스트
-            fill(255); textSize(24); textAlign(CENTER, CENTER); text(`몬스터 체력: ${Math.floor(monsterHp)}`, xPos + barWidth / 2, yPos + barHeight / 2);
+            let fillWidth = isFeverTime ? (feverTimer / 5000) * barWidth : (feverGauge / 100) * barWidth;
+            rect(xPos, yPos, fillWidth, barHeight, 10);
+            
+            fill(255); textSize(16); textAlign(CENTER, BOTTOM);
+            text(isFeverTime ? "🫧 폭풍 소독 모드 발동! 🫧" : "청결 게이지 (계속 움직이세요!)", width/2, yPos - 5);
             pop();
         }
 
         function levelClear() {
-            gameState = 'CLEARED'; playSound('success'); 
-            particles = []; for(let i=0; i<150; i++) particles.push(new Particle(monsterX, monsterY));
-            
+            gameState = 'CLEARED'; playSound('success'); screenShake = 0; isFeverTime = false; feverGauge = 0;
+            particles = []; for(let i=0; i<150; i++) particles.push(new Particle(germX, germY));
             let msg = document.getElementById('message-box');
-            msg.style.display = 'block';
-            msg.innerHTML = `STAGE ${level} 클리어! 🎉<br>다음 몬스터가 등장합니다.`;
+            msg.style.display = 'block'; msg.innerHTML = `STAGE ${level} 소독 완료! ✨<br>다음 세균이 나타납니다.`;
             setTimeout(nextLevel, 4000);
         }
 
@@ -385,14 +445,11 @@
             for (let i = particles.length - 1; i >= 0; i--) { particles[i].update(); particles[i].show(); if (particles[i].alpha <= 0) particles.splice(i, 1); }
         }
 
+        // 스테이지 초기화 (초기화 안정성 강화)
         function nextLevel() {
-            level++;
-            maxHp += 50; // 스테이지마다 최대 체력 증가
-            monsterHp = maxHp; 
-            monsterX = width * 0.8; monsterY = height / 2; 
-            projectiles = []; 
-            targetHoldTime = min(1500 + ((level - 1) * 500), 5000); // 버티기 시간 증가
-            
+            level++; maxHp += 50; germHp = maxHp; germX = width * 0.8; germY = height / 2; 
+            projectiles = []; damageTexts = []; particles = []; 
+            targetHoldTime = min(1500 + ((level - 1) * 500), 5000); 
             document.getElementById('level-text').innerText = 'STAGE ' + level;
             document.getElementById('message-box').style.display = 'none';
             gameState = 'START_SCREEN';
